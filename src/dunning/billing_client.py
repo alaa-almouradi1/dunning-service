@@ -80,6 +80,10 @@ class BillingClient:
             return PayResult(outcome, payment.get("id"), payment.get("failure_code"))
 
         code = _error_code(body)
+        if response.status_code == 422 and code == "payment_method_required":
+            # No card on file: the API records no payment, but for dunning this
+            # is a failed attempt like any other (the customer must add a card).
+            return PayResult(PayOutcome.FAILED, failure_code=code)
         if response.status_code == 409 and code == "invoice_not_payable":
             return PayResult(PayOutcome.NOT_PAYABLE, detail=code)
         if response.status_code == 409 and code in {

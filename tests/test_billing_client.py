@@ -105,3 +105,14 @@ async def test_server_errors_on_write_off_are_retryable() -> None:
 
     with pytest.raises(BillingUnavailableError):
         await client.mark_uncollectible("inv-1", "k1")
+
+
+async def test_a_customer_without_a_card_counts_as_a_failed_attempt() -> None:
+    client = client_returning(
+        httpx.Response(422, json={"error": {"code": "payment_method_required"}})
+    )
+
+    result = await client.pay_invoice("inv-1", "key-1")
+
+    assert result.outcome is PayOutcome.FAILED
+    assert result.failure_code == "payment_method_required"

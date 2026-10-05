@@ -81,7 +81,7 @@ All settings are environment variables prefixed with `DUNNING_` (see
 ## Tests
 
 ```bash
-pytest                        # 70 tests (SQLite, fake Kafka, fake billing API)
+pytest                        # 72 tests (SQLite, fake Kafka, fake billing API)
 ruff check . && ruff format --check . && mypy   # lint, format, strict typing
 KAFKA_BROKERS=localhost:29092 pytest -m kafka -o addopts=""   # against a real broker
 ```
