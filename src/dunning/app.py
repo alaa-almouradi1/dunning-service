@@ -51,7 +51,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine: AsyncEngine = create_engine(settings.database_url)
     sessions = create_session_factory(engine)
     billing = BillingClient.from_settings(settings)
-    policy = RetryPolicy(tuple(settings.retry_schedule_days))
+    policy = RetryPolicy(tuple(settings.retry_schedule))
     notifier = LogNotifier()
     stop = asyncio.Event()
     cleanup: list[Callable[[], Awaitable[Any]]] = [billing.aclose, engine.dispose]

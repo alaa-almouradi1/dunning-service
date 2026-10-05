@@ -24,7 +24,7 @@ T0 = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 
 @pytest.fixture
 def handler() -> EventHandler:
-    return EventHandler(RetryPolicy((1, 3)))
+    return EventHandler(RetryPolicy.days(1, 3))
 
 
 async def deliver(
