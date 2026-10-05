@@ -3,10 +3,24 @@ image:
   tag: ""          # defaults to the chart appVersion
   pullPolicy: IfNotPresent
 
-# One Deployment runs both the Kafka consumer and the retry scheduler.
-# Replicas beyond the topic's partition count sit idle as consumers, but the
-# scheduler is safe to scale (claims use SELECT ... FOR UPDATE SKIP LOCKED).
-replicaCount: 2
+# The consumer and the scheduler run as separate Deployments because they
+# scale differently:
+#  - consumer: at most one active pod per partition of the topic; extra
+#    replicas only stand by for failover.
+#  - scheduler: scales freely (claims use SELECT ... FOR UPDATE SKIP LOCKED).
+# Both serve the health, metrics and /cases endpoints.
+consumer:
+  enabled: true
+  replicas: 3
+scheduler:
+  enabled: true
+  replicas: 2
+  concurrency: "10"
+
+# Keep at least one pod of each component running during node drains.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
 
 config:
   kafkaBrokers: kafka:9092
@@ -17,9 +31,16 @@ config:
   retrySchedule: '["P1D","P3D","P5D","P7D"]'
   schedulerIntervalSeconds: "30"
   logLevel: INFO
+  dbPoolSize: "15"
+  # PLAINTEXT, SSL, SASL_PLAINTEXT or SASL_SSL (managed Kafka: SASL_SSL)
+  kafkaSecurityProtocol: PLAINTEXT
+  kafkaSaslMechanism: ""      # e.g. SCRAM-SHA-512
+  kafkaSaslUsername: ""
 
-# Secret with keys DUNNING_DATABASE_URL and DUNNING_BILLING_API_KEY.
-# Create it out of band (e.g. External Secrets or Vault); never commit it.
+# Secret created out of band (e.g. External Secrets or Vault); never commit it.
+#   required: DUNNING_DATABASE_URL, DUNNING_BILLING_API_KEY
+#   optional: DUNNING_ADMIN_TOKEN (enables /cases), DUNNING_METRICS_TOKEN
+#             (enables /metrics), DUNNING_KAFKA_SASL_PASSWORD
 existingSecret: dunning-service
 
 migrations:

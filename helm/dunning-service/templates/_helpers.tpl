@@ -35,6 +35,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   value: {{ .Values.config.schedulerIntervalSeconds | quote }}
 - name: DUNNING_LOG_LEVEL
   value: {{ .Values.config.logLevel | quote }}
+- name: DUNNING_DB_POOL_SIZE
+  value: {{ .Values.config.dbPoolSize | quote }}
+- name: DUNNING_SCHEDULER_CONCURRENCY
+  value: {{ .Values.scheduler.concurrency | quote }}
+- name: DUNNING_KAFKA_SECURITY_PROTOCOL
+  value: {{ .Values.config.kafkaSecurityProtocol | quote }}
+{{- with .Values.config.kafkaSaslMechanism }}
+- name: DUNNING_KAFKA_SASL_MECHANISM
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.config.kafkaSaslUsername }}
+- name: DUNNING_KAFKA_SASL_USERNAME
+  value: {{ . | quote }}
+{{- end }}
 - name: DUNNING_DATABASE_URL
   valueFrom:
     secretKeyRef:
@@ -45,4 +59,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     secretKeyRef:
       name: {{ .Values.existingSecret }}
       key: DUNNING_BILLING_API_KEY
+{{- range list "DUNNING_ADMIN_TOKEN" "DUNNING_METRICS_TOKEN" "DUNNING_KAFKA_SASL_PASSWORD" }}
+- name: {{ . }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.Values.existingSecret }}
+      key: {{ . }}
+      optional: true
+{{- end }}
 {{- end -}}
