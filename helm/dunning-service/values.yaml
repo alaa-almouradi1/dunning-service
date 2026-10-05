@@ -1,0 +1,50 @@
+image:
+  repository: ghcr.io/alaa-almouradi1/dunning-service
+  tag: ""          # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+# One Deployment runs both the Kafka consumer and the retry scheduler.
+# Replicas beyond the topic's partition count sit idle as consumers, but the
+# scheduler is safe to scale (claims use SELECT ... FOR UPDATE SKIP LOCKED).
+replicaCount: 2
+
+config:
+  kafkaBrokers: kafka:9092
+  kafkaTopic: billing.events
+  kafkaDlqTopic: billing.events.dlq
+  kafkaGroupId: dunning-service
+  billingApiUrl: http://subscription-billing-api/api/v1
+  retrySchedule: '["P1D","P3D","P5D","P7D"]'
+  schedulerIntervalSeconds: "30"
+  logLevel: INFO
+
+# Secret with keys DUNNING_DATABASE_URL and DUNNING_BILLING_API_KEY.
+# Create it out of band (e.g. External Secrets or Vault); never commit it.
+existingSecret: dunning-service
+
+migrations:
+  enabled: true   # runs `alembic upgrade head` as a pre-install/pre-upgrade hook
+
+service:
+  port: 8000
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# Time to finish the current batch after SIGTERM before Kubernetes kills the pod.
+terminationGracePeriodSeconds: 45
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]

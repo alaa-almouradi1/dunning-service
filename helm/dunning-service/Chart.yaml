@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dunning-service
+description: Event-driven payment recovery for the subscription billing API
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

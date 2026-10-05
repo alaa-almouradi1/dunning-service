@@ -1,0 +1,27 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "dunning.fullname" . }}-migrate
+  labels:
+    {{- include "dunning.labels" . | nindent 4 }}
+  annotations:
+    # Schema first, then the new pods: old pods keep running on a compatible schema.
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "dunning.image" . }}
+          command: ["alembic", "upgrade", "head"]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            {{- include "dunning.env" . | nindent 12 }}
+{{- end }}
