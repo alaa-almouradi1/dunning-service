@@ -48,6 +48,12 @@ class BillingClient:
                     "Accept": "application/json",
                 },
                 timeout=settings.billing_api_timeout_seconds,
+                # Reuse connections (TLS handshakes are expensive) and cap
+                # them in line with the scheduler's concurrency.
+                limits=httpx.Limits(
+                    max_connections=settings.scheduler_concurrency * 2,
+                    max_keepalive_connections=settings.scheduler_concurrency,
+                ),
             )
         )
 

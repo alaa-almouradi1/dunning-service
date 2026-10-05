@@ -58,12 +58,14 @@ class RetryScheduler:
         policy: RetryPolicy,
         notifier: Notifier,
         batch_size: int = 50,
+        concurrency: int = 10,
     ) -> None:
         self._sessions = sessions
         self._billing = billing
         self._policy = policy
         self._notifier = notifier
         self._batch_size = batch_size
+        self._concurrency = concurrency
         self.running = False
 
     async def run(self, stop: asyncio.Event, interval_seconds: float) -> None:
@@ -86,19 +88,25 @@ class RetryScheduler:
         now = now or utcnow()
         claimed = await self._claim(now)
 
-        for work in claimed:
-            structlog.contextvars.bind_contextvars(invoice_id=work.invoice_id)
-            try:
-                if work.exhaust:
-                    await self._exhaust(work)
-                else:
-                    await self._retry(work, now)
-            except Exception:
-                # The lease expires and the case is picked up again later.
-                log.exception("dunning_work_failed", exhaust=work.exhaust)
-            finally:
-                structlog.contextvars.unbind_contextvars("invoice_id")
+        # Each item is an independent API call plus its own transaction, so
+        # they run concurrently; the semaphore bounds the load we put on the
+        # billing API and on the connection pool.
+        limit = asyncio.Semaphore(self._concurrency)
 
+        async def execute(work: Work) -> None:
+            async with limit:
+                # Each task has its own copy of the logging context.
+                structlog.contextvars.bind_contextvars(invoice_id=work.invoice_id)
+                try:
+                    if work.exhaust:
+                        await self._exhaust(work)
+                    else:
+                        await self._retry(work, now)
+                except Exception:
+                    # The lease expires and the case is picked up again later.
+                    log.exception("dunning_work_failed", exhaust=work.exhaust)
+
+        await asyncio.gather(*(execute(work) for work in claimed))
         return len(claimed)
 
     async def _claim(self, now: datetime) -> list[Work]:

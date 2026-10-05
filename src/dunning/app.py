@@ -49,7 +49,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     configure_logging(settings.log_level, settings.log_json)
 
-    engine: AsyncEngine = create_engine(settings.database_url.get_secret_value())
+    engine: AsyncEngine = create_engine(
+        settings.database_url.get_secret_value(),
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
     sessions = create_session_factory(engine)
     billing = BillingClient.from_settings(settings)
     policy = RetryPolicy(tuple(settings.retry_schedule))
@@ -77,7 +81,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if settings.run_scheduler:
         scheduler = RetryScheduler(
-            sessions, billing, policy, notifier, batch_size=settings.scheduler_batch_size
+            sessions,
+            billing,
+            policy,
+            notifier,
+            batch_size=settings.scheduler_batch_size,
+            concurrency=settings.scheduler_concurrency,
         )
         runtime.tasks["scheduler"] = asyncio.create_task(
             scheduler.run(stop, settings.scheduler_interval_seconds), name="scheduler"

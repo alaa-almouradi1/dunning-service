@@ -25,6 +25,7 @@ class FakeSource:
         self.logs: dict[int, list[Record]] = defaultdict(list)
         self.position: dict[int, int] = defaultdict(int)
         self.committed: dict[int, int] = {}
+        self.commit_calls = 0
 
     def append(self, value: bytes, partition: int = 0) -> Record:
         record = Record("billing.events", partition, len(self.logs[partition]), b"key", value)
@@ -40,6 +41,7 @@ class FakeSource:
         return batch[:max_records]
 
     async def commit(self, record: Record) -> None:
+        self.commit_calls += 1
         self.committed[record.partition] = record.offset + 1
 
     async def seek(self, record: Record) -> None:
@@ -105,6 +107,7 @@ async def test_events_are_applied_and_committed_in_order(
 
     assert result.processed == 2
     assert source.committed == {0: 2}
+    assert source.commit_calls == 1, "one commit per partition per poll"
     assert await count(session_factory, DunningCase) == 2
 
 
@@ -215,3 +218,26 @@ async def test_backoff_grows_and_resets(
 
     assert (await consumer.poll_once()).processed == 1
     assert consumer._consecutive_failures == 0
+
+
+async def test_records_before_a_failure_are_still_committed(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    class FailSecond(EventHandler):
+        calls = 0
+
+        async def handle(self, session: AsyncSession, envelope: Envelope) -> HandleOutcome:
+            FailSecond.calls += 1
+            if FailSecond.calls == 2:
+                raise ConnectionError("database blip")
+            return await super().handle(session, envelope)
+
+    source = FakeSource()
+    for _ in range(3):
+        source.append(to_bytes(payment_failed(uuid4())))
+    consumer = make_consumer(session_factory, source, handler=FailSecond(RetryPolicy()))
+
+    await consumer.poll_once()
+
+    assert source.committed == {0: 1}, "the first record is done, the second is retried"
+    assert source.position[0] == 1

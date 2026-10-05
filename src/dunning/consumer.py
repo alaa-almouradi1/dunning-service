@@ -1,8 +1,9 @@
 """Consumes billing events with at-least-once semantics.
 
 Offsets are committed only after an event's effects are committed to the
-database, one record at a time. A crash in between means the event is
-delivered again, and the handler recognises it by its ID.
+database: once per partition per poll, for the last record that was done.
+A crash in between means up to one poll's worth of events is delivered
+again, and the handler recognises each by its ID.
 
 Two kinds of failure are treated differently:
 
@@ -101,6 +102,7 @@ class EventConsumer:
     async def poll_once(self, timeout_ms: int = 1000, max_records: int = 100) -> PollResult:
         records = await self._source.fetch(timeout_ms, max_records)
         blocked: set[tuple[str, int]] = set()
+        last_done: dict[tuple[str, int], Record] = {}
         processed = 0
 
         for record in records:
@@ -109,11 +111,15 @@ class EventConsumer:
                 continue  # an earlier record of this partition failed; keep order
 
             if await self._process(record):
-                await self._source.commit(record)
+                last_done[partition] = record
                 processed += 1
             else:
                 await self._source.seek(record)
                 blocked.add(partition)
+
+        # One commit per partition instead of one per record.
+        for record in last_done.values():
+            await self._source.commit(record)
 
         if blocked:
             self._consecutive_failures += 1

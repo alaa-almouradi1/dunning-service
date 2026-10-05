@@ -40,6 +40,12 @@ class Settings(BaseSettings):
 
     scheduler_interval_seconds: float = Field(default=30.0, gt=0)
     scheduler_batch_size: int = Field(default=50, gt=0)
+    scheduler_concurrency: int = Field(default=10, gt=0)
+
+    # Connections per process. Keep pool_size >= scheduler_concurrency + 2
+    # (the consumer and the API need connections too).
+    db_pool_size: int = Field(default=15, gt=0)
+    db_max_overflow: int = Field(default=5, ge=0)
 
     # Bearer tokens for GET /cases (support staff) and GET /metrics
     # (Prometheus). Unset means the endpoint is disabled, not open.

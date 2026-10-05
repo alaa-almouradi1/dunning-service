@@ -137,7 +137,16 @@ class ProcessedEvent(Base):
     processed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
 
 
-def create_engine(url: str, **kwargs: Any) -> AsyncEngine:
+def create_engine(
+    url: str, *, pool_size: int = 5, max_overflow: int = 5, **kwargs: Any
+) -> AsyncEngine:
+    if not url.startswith("sqlite"):
+        kwargs |= {
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            # Recycle before MariaDB's wait_timeout closes idle connections.
+            "pool_recycle": 1800,
+        }
     return create_async_engine(url, pool_pre_ping=True, **kwargs)
 
 
