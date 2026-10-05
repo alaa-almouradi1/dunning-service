@@ -229,3 +229,19 @@ async def test_an_invoice_that_was_paid_meanwhile_closes_the_case(
     case = await load(session_factory)
     assert case.status is CaseStatus.CLOSED
     assert case.closed_reason == "invoice_not_payable"
+
+
+async def test_a_customer_without_a_card_moves_through_the_schedule_instead_of_looping(
+    session_factory: async_sessionmaker[AsyncSession],
+    scheduler: RetryScheduler,
+    api: FakeBillingApi,
+) -> None:
+    await open_case(session_factory)
+    api.queue_error(INVOICE, 422, "payment_method_required")
+
+    await scheduler.run_once(NOW)
+
+    case = await load(session_factory)
+    assert case.status is CaseStatus.RETRYING
+    assert case.failed_attempts == 2
+    assert case.last_failure_code == "payment_method_required"
