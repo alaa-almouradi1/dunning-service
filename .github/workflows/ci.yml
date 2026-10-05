@@ -36,6 +36,23 @@ jobs:
       - name: Tests
         run: pytest -q
 
+  audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Audit the pinned dependency set
+        run: |
+          pip install pip-audit
+          pip-audit --requirement constraints.txt --no-deps --strict
+
   kafka-integration:
     name: Kafka integration
     runs-on: ubuntu-latest
