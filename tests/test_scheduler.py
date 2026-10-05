@@ -32,7 +32,7 @@ def scheduler(
     api: FakeBillingApi,
     notifier: RecordingNotifier,
 ) -> RetryScheduler:
-    return RetryScheduler(session_factory, api.client(), RetryPolicy((1, 3)), notifier)
+    return RetryScheduler(session_factory, api.client(), RetryPolicy.days(1, 3), notifier)
 
 
 async def open_case(
@@ -130,7 +130,7 @@ async def test_the_payment_failed_event_for_our_own_retry_is_not_double_counted(
     async with session_factory.begin() as session:
         case = await session.scalar(select(DunningCase))
         assert case is not None
-        apply_failure(case, RetryPolicy((1, 3)), 2, "card_declined", NOW)
+        apply_failure(case, RetryPolicy.days(1, 3), 2, "card_declined", NOW)
 
     assert (await load(session_factory)).failed_attempts == 2
 
