@@ -1,0 +1,61 @@
+# Runs next to the subscription-billing-api stack and joins its network
+# (billing-net), where Kafka (kafka:9092) and the billing API (api:80) live.
+#
+#   (in subscription-billing-api)  docker compose up -d
+#   (here)                         docker compose up --build
+#
+# Retries are minutes apart here so a full dunning cycle can be watched live.
+
+services:
+  dunning-db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: dunning
+      MARIADB_USER: dunning
+      MARIADB_PASSWORD: dunning
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dlq-topic:
+    image: apache/kafka:3.9.0
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic billing.events.dlq --partitions 1 --replication-factor 1
+
+  dunning-migrate:
+    build: .
+    image: dunning-service:local
+    environment: &env
+      DUNNING_DATABASE_URL: mariadb+aiomysql://dunning:dunning@dunning-db:3306/dunning
+      DUNNING_KAFKA_BROKERS: kafka:9092
+      DUNNING_BILLING_API_URL: http://api/api/v1
+      DUNNING_BILLING_API_KEY: local-dev-key
+      DUNNING_RETRY_SCHEDULE: '["PT1M", "PT2M", "PT3M"]'
+      DUNNING_SCHEDULER_INTERVAL_SECONDS: "5"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      dunning-db:
+        condition: service_healthy
+
+  dunning:
+    build: .
+    image: dunning-service:local
+    environment: *env
+    ports:
+      - "8000:8000"
+    depends_on:
+      dunning-migrate:
+        condition: service_completed_successfully
+      dlq-topic:
+        condition: service_completed_successfully
+
+networks:
+  default:
+    name: billing-net
+    external: true
