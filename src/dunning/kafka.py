@@ -1,8 +1,10 @@
 """aiokafka adapters for the transport-agnostic consumer."""
 
 from collections.abc import Sequence
+from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer, TopicPartition
+from aiokafka.helpers import create_ssl_context
 
 from dunning.config import Settings
 from dunning.consumer import Record
@@ -53,6 +55,23 @@ class KafkaDeadLetters:
         )
 
 
+def connection_options(settings: Settings) -> dict[str, Any]:
+    """Security options shared by the consumer and the producer."""
+    options: dict[str, Any] = {"security_protocol": settings.kafka_security_protocol}
+
+    if settings.kafka_security_protocol in ("SSL", "SASL_SSL"):
+        # Verifies the broker certificate and hostname.
+        options["ssl_context"] = create_ssl_context(cafile=settings.kafka_ssl_cafile)
+
+    if settings.kafka_security_protocol.startswith("SASL"):
+        assert settings.kafka_sasl_password is not None  # enforced by Settings
+        options["sasl_mechanism"] = settings.kafka_sasl_mechanism
+        options["sasl_plain_username"] = settings.kafka_sasl_username
+        options["sasl_plain_password"] = settings.kafka_sasl_password.get_secret_value()
+
+    return options
+
+
 def build_consumer(settings: Settings) -> AIOKafkaConsumer:
     return AIOKafkaConsumer(
         settings.kafka_topic,
@@ -60,6 +79,7 @@ def build_consumer(settings: Settings) -> AIOKafkaConsumer:
         group_id=settings.kafka_group_id,
         enable_auto_commit=False,
         auto_offset_reset="earliest",
+        **connection_options(settings),
     )
 
 
@@ -68,4 +88,5 @@ def build_producer(settings: Settings) -> AIOKafkaProducer:
         bootstrap_servers=settings.kafka_brokers,
         acks="all",
         enable_idempotence=True,
+        **connection_options(settings),
     )
