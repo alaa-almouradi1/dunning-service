@@ -1,0 +1,24 @@
+# Weekly dependency update PRs; each one runs the full CI before it can be merged.
+# Remember to refresh constraints.txt in the same PR (pip freeze in a clean venv).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # The python version is a deliberate upgrade, not a bot bump: it must
+      # move together with the version CI tests on (.github/workflows/ci.yml and pyproject.toml).
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

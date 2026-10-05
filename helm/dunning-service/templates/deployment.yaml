@@ -1,37 +1,50 @@
+{{- range $component := list "consumer" "scheduler" }}
+{{- $settings := index $.Values $component }}
+{{- if $settings.enabled }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "dunning.fullname" . }}
+  name: {{ include "dunning.fullname" $ }}-{{ $component }}
   labels:
-    {{- include "dunning.labels" . | nindent 4 }}
+    {{- include "dunning.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ $settings.replicas }}
   selector:
     matchLabels:
-      {{- include "dunning.selectorLabels" . | nindent 6 }}
+      {{- include "dunning.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
   template:
     metadata:
       labels:
-        {{- include "dunning.selectorLabels" . | nindent 8 }}
+        {{- include "dunning.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
       annotations:
+        # /metrics needs a Bearer token: configure it in the scrape job
+        # (authorization.credentials_file) or a ServiceMonitor.
         prometheus.io/scrape: "true"
-        prometheus.io/port: {{ .Values.service.port | quote }}
+        prometheus.io/port: {{ $.Values.service.port | quote }}
         prometheus.io/path: /metrics
     spec:
-      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ $.Values.terminationGracePeriodSeconds }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       containers:
         - name: dunning
-          image: {{ include "dunning.image" . }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "dunning.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $.Values.securityContext | nindent 12 }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ $.Values.service.port }}
           env:
-            {{- include "dunning.env" . | nindent 12 }}
+            {{- include "dunning.env" $ | nindent 12 }}
+            - name: DUNNING_RUN_CONSUMER
+              value: {{ eq $component "consumer" | quote }}
+            - name: DUNNING_RUN_SCHEDULER
+              value: {{ eq $component "scheduler" | quote }}
           livenessProbe:
             httpGet:
               path: /health/live
@@ -44,10 +57,27 @@ spec:
             periodSeconds: 10
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml $.Values.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir: {}
+{{- if and $.Values.podDisruptionBudget.enabled (gt (int $settings.replicas) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dunning.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "dunning.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "dunning.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+{{- end }}
+{{- end }}
+{{- end }}

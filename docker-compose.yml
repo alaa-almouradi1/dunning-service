@@ -35,7 +35,12 @@ services:
       DUNNING_DATABASE_URL: mariadb+aiomysql://dunning:dunning@dunning-db:3306/dunning
       DUNNING_KAFKA_BROKERS: kafka:9092
       DUNNING_BILLING_API_URL: http://api/api/v1
-      DUNNING_BILLING_API_KEY: local-dev-key
+      # Demo values only. The billing API grants this key just the scopes
+      # dunning needs (billing.read, payments.write, invoices.write,
+      # subscriptions.write); see its docker-compose.yml.
+      DUNNING_BILLING_API_KEY: dunning-local-key
+      DUNNING_ADMIN_TOKEN: local-admin-token
+      DUNNING_METRICS_TOKEN: local-metrics-token
       DUNNING_RETRY_SCHEDULE: '["PT1M", "PT2M", "PT3M"]'
       DUNNING_SCHEDULER_INTERVAL_SECONDS: "5"
     command: ["alembic", "upgrade", "head"]
