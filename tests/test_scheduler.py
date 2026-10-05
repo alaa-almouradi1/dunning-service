@@ -1,9 +1,11 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dunning.billing_client import PayOutcome, PayResult
 from dunning.cases import NotificationKind, apply_failure
 from dunning.db import CaseStatus, DunningCase, RetryAttempt
 from dunning.notifications import RecordingNotifier
@@ -245,3 +247,48 @@ async def test_a_customer_without_a_card_moves_through_the_schedule_instead_of_l
     assert case.status is CaseStatus.RETRYING
     assert case.failed_attempts == 2
     assert case.last_failure_code == "payment_method_required"
+
+
+async def test_due_work_runs_concurrently_within_the_limit(
+    session_factory: async_sessionmaker[AsyncSession],
+    notifier: RecordingNotifier,
+) -> None:
+    in_flight = 0
+    peak = 0
+
+    class SlowBilling:
+        async def pay_invoice(self, invoice_id: str, idempotency_key: str) -> PayResult:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return PayResult(PayOutcome.SUCCEEDED, payment_id="pay")
+
+    async with session_factory.begin() as session:
+        for n in range(6):
+            session.add(
+                DunningCase(
+                    invoice_id=f"inv-{n}",
+                    customer_id="cus-1",
+                    status=CaseStatus.RETRYING,
+                    failed_attempts=1,
+                    next_attempt_at=NOW,
+                    amount=100,
+                    currency="EUR",
+                )
+            )
+
+    scheduler = RetryScheduler(
+        session_factory,
+        SlowBilling(),
+        RetryPolicy(),
+        notifier,
+        concurrency=3,  # type: ignore[arg-type]
+    )
+    assert await scheduler.run_once(NOW) == 6
+
+    assert peak == 3
+    async with session_factory() as session:
+        statuses = set((await session.scalars(select(DunningCase.status))).all())
+    assert statuses == {CaseStatus.RECOVERED}
