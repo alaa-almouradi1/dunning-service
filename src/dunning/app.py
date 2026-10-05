@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import structlog
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 from sqlalchemy import select, text
@@ -33,6 +33,7 @@ from dunning.logging_setup import configure_logging
 from dunning.notifications import LogNotifier
 from dunning.policy import RetryPolicy
 from dunning.scheduler import RetryScheduler
+from dunning.security import require_token
 
 log = structlog.get_logger(__name__)
 
@@ -48,7 +49,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     configure_logging(settings.log_level, settings.log_json)
 
-    engine: AsyncEngine = create_engine(settings.database_url)
+    engine: AsyncEngine = create_engine(settings.database_url.get_secret_value())
     sessions = create_session_factory(engine)
     billing = BillingClient.from_settings(settings)
     policy = RetryPolicy(tuple(settings.retry_schedule))
@@ -195,11 +196,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.status_code = 200 if healthy else 503
         return {"status": "ok" if healthy else "degraded", "checks": checks}
 
-    @app.get("/metrics", tags=["operations"])
+    metrics_auth = [Depends(require_token("metrics_token"))]
+    admin_auth = [Depends(require_token("admin_token"))]
+
+    @app.get("/metrics", tags=["operations"], dependencies=metrics_auth)
     async def metrics() -> Response:
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-    @app.get("/cases", tags=["cases"])
+    @app.get("/cases", tags=["cases"], dependencies=admin_auth)
     async def list_cases(
         request: Request,
         status: Annotated[CaseStatus | None, Query()] = None,
@@ -211,7 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with runtime(request).sessions() as session:
             return [CaseOut.of(case) for case in (await session.scalars(query)).all()]
 
-    @app.get("/cases/{invoice_id}", tags=["cases"])
+    @app.get("/cases/{invoice_id}", tags=["cases"], dependencies=admin_auth)
     async def get_case(request: Request, invoice_id: str) -> CaseOut:
         async with runtime(request).sessions() as session:
             case = await session.scalar(

@@ -12,7 +12,9 @@ target_metadata = Base.metadata
 
 def _url() -> str:
     # Tests pass an explicit URL; everything else uses the service settings.
-    return config.get_main_option("sqlalchemy.url") or get_settings().database_url
+    return (
+        config.get_main_option("sqlalchemy.url") or get_settings().database_url.get_secret_value()
+    )
 
 
 def run_migrations_offline() -> None:
