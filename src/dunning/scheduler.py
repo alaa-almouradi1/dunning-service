@@ -31,12 +31,14 @@ from dunning.cases import (
 from dunning.db import ACTIVE_STATUSES, CaseStatus, DunningCase, RetryAttempt, utcnow
 from dunning.notifications import Notifier
 from dunning.policy import RetryPolicy
+from dunning.retention import prune_processed_events
 
 log = structlog.get_logger(__name__)
 
 IN_FLIGHT_LEASE = timedelta(minutes=10)
 WAIT_FOR_PROVIDER = timedelta(hours=1)
 RETRY_WHEN_UNAVAILABLE = timedelta(minutes=15)
+PRUNE_EVERY = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ class RetryScheduler:
         notifier: Notifier,
         batch_size: int = 50,
         concurrency: int = 10,
+        processed_event_retention: timedelta = timedelta(days=30),
     ) -> None:
         self._sessions = sessions
         self._billing = billing
@@ -66,6 +69,8 @@ class RetryScheduler:
         self._notifier = notifier
         self._batch_size = batch_size
         self._concurrency = concurrency
+        self._retention = processed_event_retention
+        self._last_pruned: datetime | None = None
         self.running = False
 
     async def run(self, stop: asyncio.Event, interval_seconds: float) -> None:
@@ -76,6 +81,7 @@ class RetryScheduler:
                 try:
                     await self.run_once()
                     await self._update_gauges()
+                    await self._prune_if_due()
                 except Exception:
                     log.exception("scheduler_iteration_failed")
                 with contextlib.suppress(TimeoutError):
@@ -83,6 +89,12 @@ class RetryScheduler:
         finally:
             self.running = False
             log.info("scheduler_stopped")
+
+    async def _prune_if_due(self) -> None:
+        now = utcnow()
+        if self._last_pruned is None or now - self._last_pruned >= PRUNE_EVERY:
+            await prune_processed_events(self._sessions, now, self._retention)
+            self._last_pruned = now
 
     async def run_once(self, now: datetime | None = None) -> int:
         now = now or utcnow()
