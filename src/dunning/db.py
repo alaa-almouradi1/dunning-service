@@ -134,7 +134,7 @@ class ProcessedEvent(Base):
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     event_type: Mapped[str] = mapped_column(String(64))
-    processed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow)
+    processed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, index=True)
 
 
 def create_engine(

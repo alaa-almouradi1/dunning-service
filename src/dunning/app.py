@@ -87,6 +87,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             notifier,
             batch_size=settings.scheduler_batch_size,
             concurrency=settings.scheduler_concurrency,
+            processed_event_retention=settings.processed_event_retention,
         )
         runtime.tasks["scheduler"] = asyncio.create_task(
             scheduler.run(stop, settings.scheduler_interval_seconds), name="scheduler"

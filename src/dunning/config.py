@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     admin_token: SecretStr | None = None
     metrics_token: SecretStr | None = None
 
+    # Must exceed Kafka's retention plus any consumer downtime, or a very late
+    # redelivery could be applied twice.
+    processed_event_retention: timedelta = timedelta(days=30)
+
     run_consumer: bool = True
     run_scheduler: bool = True
 
