@@ -12,7 +12,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="DUNNING_", env_file=".env", extra="ignore")
 
-    database_url: str = "sqlite+aiosqlite:///./dunning.db"
+    # SecretStr: the URL contains the DB password; keep it out of logs and reprs.
+    database_url: SecretStr = SecretStr("sqlite+aiosqlite:///./dunning.db")
 
     kafka_brokers: str = "localhost:29092"
     kafka_topic: str = "billing.events"
@@ -32,6 +33,11 @@ class Settings(BaseSettings):
 
     scheduler_interval_seconds: float = Field(default=30.0, gt=0)
     scheduler_batch_size: int = Field(default=50, gt=0)
+
+    # Bearer tokens for GET /cases (support staff) and GET /metrics
+    # (Prometheus). Unset means the endpoint is disabled, not open.
+    admin_token: SecretStr | None = None
+    metrics_token: SecretStr | None = None
 
     run_consumer: bool = True
     run_scheduler: bool = True
